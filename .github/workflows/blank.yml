@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   cloud-pc:
-    name: Preparar Windows Cloud
+    name: Preparar Windows Cloud BR
     runs-on: windows-2022
     timeout-minutes: 350
 
@@ -31,33 +31,67 @@ jobs:
           Write-Host "RAM: $([math]::Round($computer.TotalPhysicalMemory / 1GB, 2)) GB"
           Write-Host "Windows: $($os.Caption)"
 
-      - name: Otimizar armazenamento
+      - name: Configurar Portugues Brasil
         shell: pwsh
         run: |
-          Write-Host "Limpando arquivos temporarios..."
+          Write-Host "Configurando idioma brasileiro..."
 
-          Remove-Item "$env:TEMP\*" `
-            -Recurse -Force -ErrorAction SilentlyContinue
+          try {
+            if (Get-Command Install-Language -ErrorAction SilentlyContinue) {
+              Install-Language pt-BR -CopyToSettings
+            }
+            else {
+              Write-Host "Install-Language indisponivel."
+              Write-Host "Tentando instalar recursos de idioma..."
 
-          Remove-Item "C:\Windows\Temp\*" `
-            -Recurse -Force -ErrorAction SilentlyContinue
-
-          Write-Host "Limpeza concluida."
-
-      - name: Instalar ferramentas
-        shell: pwsh
-        run: |
-          $tools = @(
-            "Git.Git",
-            "7zip.7zip",
-            "Microsoft.PowerShell"
-          )
-
-          foreach ($tool in $tools) {
-            Write-Host "Verificando $tool"
+              Add-WindowsCapability -Online `
+                -Name "Language.Basic~~~pt-BR~0.0.1.0" `
+                -ErrorAction Stop
+            }
+          }
+          catch {
+            Write-Warning "Nao foi possivel instalar o pacote completo: $_"
           }
 
-          winget --version
+          Set-WinSystemLocale pt-BR
+          Set-Culture pt-BR
+          Set-WinUILanguageOverride pt-BR
+
+          $languageList = New-WinUserLanguageList pt-BR
+          $languageList[0].InputMethodTips.Clear()
+          $languageList[0].InputMethodTips.Add("0416:00010416")
+
+          Set-WinUserLanguageList $languageList -Force
+
+          Set-WinHomeLocation -GeoId 32
+
+          Write-Host "Configuracao regional aplicada."
+
+          Get-WinUserLanguageList
+
+      - name: Configurar fuso horario
+        shell: pwsh
+        run: |
+          Set-TimeZone -Id "E. South America Standard Time"
+
+          Write-Host "Fuso horario configurado:"
+          Get-TimeZone
+
+      - name: Verificar ferramentas
+        shell: pwsh
+        run: |
+          $tools = @("git", "7z", "pwsh")
+
+          foreach ($tool in $tools) {
+            $found = Get-Command $tool `
+              -ErrorAction SilentlyContinue
+
+            if ($found) {
+              Write-Host "$tool encontrado."
+            } else {
+              Write-Host "$tool nao encontrado."
+            }
+          }
 
       - name: Verificar CPU e memoria
         shell: pwsh
@@ -79,12 +113,21 @@ jobs:
             Size,
             SizeRemaining
 
+      - name: Diagnostico de rede
+        shell: pwsh
+        run: |
+          Get-NetAdapter |
+            Select-Object Name, Status, LinkSpeed
+
       - name: Finalizar diagnostico
         shell: pwsh
         run: |
           Write-Host "================================"
-          Write-Host " BENJA CLOUD PC PREPARADO"
+          Write-Host "      BENJA CLOUD PC BR"
           Write-Host "================================"
-          Write-Host "Ambiente Windows configurado."
-          Write-Host "Fim da verificacao."
+
+          Write-Host "Idioma solicitado: Portugues Brasil"
+          Write-Host "Regiao: Brasil"
+          Write-Host "Fuso: Brasilia"
+          Write-Host "Preparacao concluida."
           
