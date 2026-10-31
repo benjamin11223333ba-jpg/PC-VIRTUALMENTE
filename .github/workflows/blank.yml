@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   cloud-pc:
-    name: Preparar Windows Cloud BR
+    name: Preparar Windows Cloud
     runs-on: windows-2022
     timeout-minutes: 350
 
@@ -30,61 +30,17 @@ jobs:
           Write-Host "Nucleos: $($cpu.NumberOfCores)"
           Write-Host "RAM: $([math]::Round($computer.TotalPhysicalMemory / 1GB, 2)) GB"
           Write-Host "Windows: $($os.Caption)"
-
-      - name: Configurar Portugues Brasil
-        shell: pwsh
-        run: |
-          Write-Host "Configurando idioma brasileiro..."
-
-          try {
-            if (Get-Command Install-Language -ErrorAction SilentlyContinue) {
-              Install-Language pt-BR -CopyToSettings
-            }
-            else {
-              Write-Host "Install-Language indisponivel."
-              Write-Host "Tentando instalar recursos de idioma..."
-
-              Add-WindowsCapability -Online `
-                -Name "Language.Basic~~~pt-BR~0.0.1.0" `
-                -ErrorAction Stop
-            }
-          }
-          catch {
-            Write-Warning "Nao foi possivel instalar o pacote completo: $_"
-          }
-
-          Set-WinSystemLocale pt-BR
-          Set-Culture pt-BR
-          Set-WinUILanguageOverride pt-BR
-
-          $languageList = New-WinUserLanguageList pt-BR
-          $languageList[0].InputMethodTips.Clear()
-          $languageList[0].InputMethodTips.Add("0416:00010416")
-
-          Set-WinUserLanguageList $languageList -Force
-
-          Set-WinHomeLocation -GeoId 32
-
-          Write-Host "Configuracao regional aplicada."
-
-          Get-WinUserLanguageList
-
-      - name: Configurar fuso horario
-        shell: pwsh
-        run: |
-          Set-TimeZone -Id "E. South America Standard Time"
-
-          Write-Host "Fuso horario configurado:"
-          Get-TimeZone
+          Write-Host "Versao: $($os.Version)"
 
       - name: Verificar ferramentas
         shell: pwsh
         run: |
+          Write-Host "Verificando ferramentas..."
+
           $tools = @("git", "7z", "pwsh")
 
           foreach ($tool in $tools) {
-            $found = Get-Command $tool `
-              -ErrorAction SilentlyContinue
+            $found = Get-Command $tool -ErrorAction SilentlyContinue
 
             if ($found) {
               Write-Host "$tool encontrado."
@@ -123,11 +79,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "================================"
-          Write-Host "      BENJA CLOUD PC BR"
+          Write-Host "      BENJA CLOUD PC"
           Write-Host "================================"
-
-          Write-Host "Idioma solicitado: Portugues Brasil"
-          Write-Host "Regiao: Brasil"
-          Write-Host "Fuso: Brasilia"
-          Write-Host "Preparacao concluida."
+          Write-Host "Diagnostico concluido."
           
