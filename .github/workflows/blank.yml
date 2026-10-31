@@ -1,0 +1,95 @@
+name: Maquina Virtual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Configure RDP
+        shell: pwsh
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User
+        shell: pwsh
+        run: |
+          $upper = (65..90) | ForEach-Object { [char]$_ }
+          $lower = (97..122) | ForEach-Object { [char]$_ }
+          $digits = (48..57) | ForEach-Object { [char]$_ }
+          $symbols = @(33,35,36,37,38,42,43,45,61,64,63) | ForEach-Object { [char]$_ }
+          
+          $password = @(
+            $upper | Get-Random
+            $upper | Get-Random
+            $lower | Get-Random
+            $lower | Get-Random
+            $digits | Get-Random
+            $digits | Get-Random
+            $symbols | Get-Random
+            $symbols | Get-Random
+          )
+          
+          $allChars = $upper + $lower + $digits + $symbols
+          while ($password.Count -lt 20) {
+            $password += $allChars | Get-Random
+          }
+          
+          $password = -join ($password | Sort-Object { Get-Random })
+          
+          Write-Host "=========================================="
+          Write-Host "SENHA RDP GERADA:"
+          Write-Host $password
+          Write-Host "=========================================="
+          
+          $secure = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "RDP" -Password $secure -AccountNeverExpires -ErrorAction SilentlyContinue | Out-Null
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP" -ErrorAction SilentlyContinue
+          
+          "RDP_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install Tailscale
+        shell: pwsh
+        run: |
+          $installer = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile $installer -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i","`"$installer`"","/quiet","/norestart" -Wait
+          Remove-Item $installer -Force
+
+      - name: Connect Tailscale
+        shell: pwsh
+        run: |
+          $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+          & \( tsPath up --authkey= \){{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+
+          $tsIP = $null
+          $i = 0
+          while (-not $tsIP -and $i -lt 15) {
+            Start-Sleep -Seconds 4
+            $tsIP = (& $tsPath ip -4 2>$null | Select-Object -First 1)
+            $i++
+          }
+          if (-not $tsIP) { 
+            Write-Error "Tailscale IP not assigned."
+            exit 1 
+          }
+          "TAILSCALE_IP=$tsIP" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Keep Alive
+        shell: pwsh
+        run: |
+          Write-Host "========== ACESSO RDP =========="
+          Write-Host "IP:       $env:TAILSCALE_IP"
+          Write-Host "Usuario:  RDP"
+          Write-Host "Senha:    $env:RDP_PASSWORD"
+          Write-Host "================================"
+          while ($true) { Start-Sleep -Seconds 60 }
