@@ -1,133 +1,90 @@
 
-name: Maquina Virtual
+name: Benja Cloud PC
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  secure-rdp:
-    runs-on: windows-latest
-    timeout-minutes: 360
+  cloud-pc:
+    name: Preparar Windows Cloud
+    runs-on: windows-2022
+    timeout-minutes: 350
 
     steps:
-      - name: Configure RDP
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Set-ItemProperty `
-            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-            -Name "fDenyTSConnections" -Value 0 -Force
-
-          Set-ItemProperty `
-            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-            -Name "UserAuthentication" -Value 1 -Force
-
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
-          Write-Host "RDP configurado."
-
-      - name: Create Benja User
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $username = "Benja"
-          $password = "Bnj@11223333"
-
-          $secure = ConvertTo-SecureString `
-            $password -AsPlainText -Force
-
-          $user = Get-LocalUser `
-            -Name $username `
-            -ErrorAction SilentlyContinue
-
-          if ($null -eq $user) {
-            New-LocalUser `
-              -Name $username `
-              -Password $secure `
-              -Description "Benja Windows Account" `
-              -AccountNeverExpires
-          } else {
-            Set-LocalUser `
-              -Name $username `
-              -Password $secure
-          }
-
-          Enable-LocalUser -Name $username
-
-          Add-LocalGroupMember `
-            -Group "Administrators" `
-            -Member $username `
-            -ErrorAction SilentlyContinue
-
-          Add-LocalGroupMember `
-            -Group "Remote Desktop Users" `
-            -Member $username `
-            -ErrorAction SilentlyContinue
-
-          Write-Host "Usuario Benja criado e configurado!"
-
-      - name: Install Tailscale
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $installer = "$env:TEMP\tailscale.msi"
-
-          Invoke-WebRequest `
-            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
-            -OutFile $installer
-
-          Start-Process msiexec.exe `
-            -ArgumentList "/i `"$installer`" /quiet /norestart" `
-            -Wait
-
-          Remove-Item $installer -Force
-
-      - name: Connect Tailscale
-        shell: pwsh
-        env:
-          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          if ([string]::IsNullOrWhiteSpace($env:TS_AUTHKEY)) {
-            throw "TAILSCALE_AUTH_KEY nao configurada."
-          }
-
-          $tailscale = "C:\Program Files\Tailscale\tailscale.exe"
-
-          & $tailscale up `
-            "--authkey=$env:TS_AUTHKEY" `
-            "--hostname=benja-windows-$env:GITHUB_RUN_ID"
-
-          Start-Sleep -Seconds 10
-
-          $tsIP = & $tailscale ip -4
-
-          if (-not $tsIP) {
-            throw "Nao foi possivel obter o IP."
-          }
-
-          "TAILSCALE_IP=$tsIP" |
-            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-          Write-Host "Tailscale conectado!"
-          Write-Host "IP: $tsIP"
-
-      - name: Keep Alive
+      - name: Preparar ambiente
         shell: pwsh
         run: |
           Write-Host "================================"
-          Write-Host "       BENJA WINDOWS PC"
-          Write-Host "================================"
-          Write-Host "IP: $env:TAILSCALE_IP"
-          Write-Host "Usuario: Benja"
-          Write-Host "Senha: configurada"
+          Write-Host "       BENJA CLOUD PC"
           Write-Host "================================"
 
-          while ($true) {
-            Start-Sleep -Seconds 60
+          $computer = Get-CimInstance Win32_ComputerSystem
+          $cpu = Get-CimInstance Win32_Processor
+          $os = Get-CimInstance Win32_OperatingSystem
+
+          Write-Host "Computador: $($computer.Name)"
+          Write-Host "CPU: $($cpu.Name)"
+          Write-Host "Nucleos: $($cpu.NumberOfCores)"
+          Write-Host "RAM: $([math]::Round($computer.TotalPhysicalMemory / 1GB, 2)) GB"
+          Write-Host "Windows: $($os.Caption)"
+
+      - name: Otimizar armazenamento
+        shell: pwsh
+        run: |
+          Write-Host "Limpando arquivos temporarios..."
+
+          Remove-Item "$env:TEMP\*" `
+            -Recurse -Force -ErrorAction SilentlyContinue
+
+          Remove-Item "C:\Windows\Temp\*" `
+            -Recurse -Force -ErrorAction SilentlyContinue
+
+          Write-Host "Limpeza concluida."
+
+      - name: Instalar ferramentas
+        shell: pwsh
+        run: |
+          $tools = @(
+            "Git.Git",
+            "7zip.7zip",
+            "Microsoft.PowerShell"
+          )
+
+          foreach ($tool in $tools) {
+            Write-Host "Verificando $tool"
           }
+
+          winget --version
+
+      - name: Verificar CPU e memoria
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Processor |
+            Select-Object Name, NumberOfCores,
+            NumberOfLogicalProcessors
+
+          Get-CimInstance Win32_OperatingSystem |
+            Select-Object TotalVisibleMemorySize,
+            FreePhysicalMemory
+
+      - name: Verificar disco
+        shell: pwsh
+        run: |
+          Get-Volume |
+            Select-Object DriveLetter,
+            FileSystemLabel,
+            Size,
+            SizeRemaining
+
+      - name: Finalizar diagnostico
+        shell: pwsh
+        run: |
+          Write-Host "================================"
+          Write-Host " BENJA CLOUD PC PREPARADO"
+          Write-Host "================================"
+          Write-Host "Ambiente Windows configurado."
+          Write-Host "Fim da verificacao."
           
