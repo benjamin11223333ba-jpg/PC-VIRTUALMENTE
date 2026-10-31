@@ -5,12 +5,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
+  windows:
+    name: Preparar Windows
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
-      - name: Configure RDP
+      - name: Configurar RDP
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -19,25 +20,26 @@ jobs:
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
             -Name 'fDenyTSConnections' -Value 0
 
-          Set-ItemProperty `
-            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-            -Name 'UserAuthentication' -Value 1
-
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: Create Benja User
+      - name: Criar usuario Benja
         shell: pwsh
         run: |
-          $password = "11223333"
+          $ErrorActionPreference = "Stop"
+
+          $password = "Bnj@11223333"
           $secure = ConvertTo-SecureString $password -AsPlainText -Force
 
-          $user = Get-LocalUser -Name "Benja" -ErrorAction SilentlyContinue
+          $user = Get-LocalUser -Name "Benja" `
+            -ErrorAction SilentlyContinue
 
           if ($user) {
             Set-LocalUser -Name "Benja" -Password $secure
           } else {
-            New-LocalUser -Name "Benja" `
+            New-LocalUser `
+              -Name "Benja" `
               -Password $secure `
+              -Description "Usuario de acesso remoto" `
               -AccountNeverExpires
           }
 
@@ -45,76 +47,27 @@ jobs:
 
           Add-LocalGroupMember `
             -Group "Remote Desktop Users" `
-            -Member "Benja"
+            -Member "Benja" `
+            -ErrorAction SilentlyContinue
 
-          Write-Host "Usuario Benja configurado!"
+          Write-Host "Usuario configurado."
 
-      - name: Install Tailscale
+      - name: Verificar Windows
         shell: pwsh
         run: |
-          $installer = "$env:TEMP\tailscale.msi"
-
-          Invoke-WebRequest `
-            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
-            -OutFile $installer
-
-          Start-Process msiexec.exe `
-            -ArgumentList "/i `"$installer`" /quiet /norestart" `
-            -Wait
-
-          Remove-Item $installer -Force
-
-      - name: Connect Tailscale
-        shell: pwsh
-        env:
-          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-        run: |
-          if (-not $env:TS_AUTHKEY) {
-            throw "Configure TAILSCALE_AUTH_KEY nos Secrets."
-          }
-
-          $exe = "C:\Program Files\Tailscale\tailscale.exe"
-
-          & $exe up `
-            --authkey=$env:TS_AUTHKEY `
-            --hostname="benja-windows-$env:GITHUB_RUN_ID"
-
-          Start-Sleep -Seconds 10
-
-          $ip = & $exe ip -4
-
-          if (-not $ip) {
-            throw "Nao foi possivel obter o IP."
-          }
-
-          "TAILSCALE_IP=$ip" |
-            Out-File $env:GITHUB_ENV -Append
-
-      - name: Windows Information
-        shell: pwsh
-        run: |
-          Write-Host "===== BENJA WINDOWS ====="
-
           Get-CimInstance Win32_OperatingSystem |
-            Select-Object Caption, OSArchitecture
+            Select-Object Caption, Version, OSArchitecture
 
           Get-CimInstance Win32_Processor |
             Select-Object Name, NumberOfCores
 
-          Write-Host "========================="
+          Get-PSDrive C |
+            Select-Object Used, Free
 
-      - name: Keep Alive
+      - name: Finalizar
         shell: pwsh
         run: |
-          Write-Host "================================"
-          Write-Host "       BENJA WINDOWS PC"
-          Write-Host "================================"
-          Write-Host "IP: $env:TAILSCALE_IP"
+          Write-Host "Preparacao concluida."
           Write-Host "Usuario: Benja"
-          Write-Host "Senha: 11223333"
-          Write-Host "================================"
-
-          while ($true) {
-            Start-Sleep -Seconds 60
-          }
+          Write-Host "Este runner e temporario."
           
