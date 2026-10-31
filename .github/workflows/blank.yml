@@ -22,10 +22,40 @@ jobs:
       - name: Create RDP User
         shell: pwsh
         run: |
-          $upper = (65..90) | ForEach-Object { [char]$_ }
-          $lower = (97..122) | ForEach-Object { [char]$_ }
-          $digits = (48..57) | ForEach-Object { [char]$_ }
-          $symbols = @(33,35,36,37,38,42,43,45,61,64,63) | ForEach-Object { [char]$_ }
-          
-          $password = @(
-            $upper | Get-Random
+          $password = "Rdp@12345678"
+          Write-Host "=========================================="
+          Write-Host "SENHA RDP:"
+          Write-Host $password
+          Write-Host "=========================================="
+          $secure = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "RDP" -Password $secure -AccountNeverExpires -ErrorAction SilentlyContinue | Out-Null
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP" -ErrorAction SilentlyContinue
+          "RDP_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install Tailscale
+        shell: pwsh
+        run: |
+          $installer = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile $installer -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i","`"$installer`"","/quiet","/norestart" -Wait
+          Remove-Item $installer -Force
+
+      - name: Connect Tailscale
+        shell: pwsh
+        run: |
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          Start-Sleep -Seconds 10
+          $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          "TAILSCALE_IP=$tsIP" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "IP do Tailscale: $tsIP"
+
+      - name: Keep Alive
+        shell: pwsh
+        run: |
+          Write-Host "========== ACESSO RDP =========="
+          Write-Host "IP:       $env:TAILSCALE_IP"
+          Write-Host "Usuario:  RDP"
+          Write-Host "Senha:    Rdp@12345678"
+          Write-Host "================================"
+          while ($true) { Start-Sleep -Seconds 60 }
