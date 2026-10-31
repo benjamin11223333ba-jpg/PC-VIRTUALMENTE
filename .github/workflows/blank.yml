@@ -5,69 +5,129 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows:
-    name: Preparar Windows
+  secure-rdp:
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
-      - name: Configurar RDP
+      - name: Configure RDP
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
           Set-ItemProperty `
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-            -Name 'fDenyTSConnections' -Value 0
+            -Name "fDenyTSConnections" -Value 0 -Force
+
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name "UserAuthentication" -Value 1 -Force
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: Criar usuario Benja
+          Write-Host "RDP configurado."
+
+      - name: Create Benja User
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
+          $username = "Benja"
           $password = "Bnj@11223333"
-          $secure = ConvertTo-SecureString $password -AsPlainText -Force
 
-          $user = Get-LocalUser -Name "Benja" `
+          $secure = ConvertTo-SecureString `
+            $password -AsPlainText -Force
+
+          $user = Get-LocalUser `
+            -Name $username `
             -ErrorAction SilentlyContinue
 
-          if ($user) {
-            Set-LocalUser -Name "Benja" -Password $secure
-          } else {
+          if ($null -eq $user) {
             New-LocalUser `
-              -Name "Benja" `
+              -Name $username `
               -Password $secure `
-              -Description "Usuario de acesso remoto" `
+              -Description "Benja Windows Account" `
               -AccountNeverExpires
+          } else {
+            Set-LocalUser `
+              -Name $username `
+              -Password $secure
           }
 
-          Enable-LocalUser -Name "Benja"
+          Enable-LocalUser -Name $username
+
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member $username `
+            -ErrorAction SilentlyContinue
 
           Add-LocalGroupMember `
             -Group "Remote Desktop Users" `
-            -Member "Benja" `
+            -Member $username `
             -ErrorAction SilentlyContinue
 
-          Write-Host "Usuario configurado."
+          Write-Host "Usuario Benja criado e configurado!"
 
-      - name: Verificar Windows
+      - name: Install Tailscale
         shell: pwsh
         run: |
-          Get-CimInstance Win32_OperatingSystem |
-            Select-Object Caption, Version, OSArchitecture
+          $ErrorActionPreference = "Stop"
 
-          Get-CimInstance Win32_Processor |
-            Select-Object Name, NumberOfCores
+          $installer = "$env:TEMP\tailscale.msi"
 
-          Get-PSDrive C |
-            Select-Object Used, Free
+          Invoke-WebRequest `
+            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
+            -OutFile $installer
 
-      - name: Finalizar
+          Start-Process msiexec.exe `
+            -ArgumentList "/i `"$installer`" /quiet /norestart" `
+            -Wait
+
+          Remove-Item $installer -Force
+
+      - name: Connect Tailscale
+        shell: pwsh
+        env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if ([string]::IsNullOrWhiteSpace($env:TS_AUTHKEY)) {
+            throw "TAILSCALE_AUTH_KEY nao configurada."
+          }
+
+          $tailscale = "C:\Program Files\Tailscale\tailscale.exe"
+
+          & $tailscale up `
+            "--authkey=$env:TS_AUTHKEY" `
+            "--hostname=benja-windows-$env:GITHUB_RUN_ID"
+
+          Start-Sleep -Seconds 10
+
+          $tsIP = & $tailscale ip -4
+
+          if (-not $tsIP) {
+            throw "Nao foi possivel obter o IP."
+          }
+
+          "TAILSCALE_IP=$tsIP" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "Tailscale conectado!"
+          Write-Host "IP: $tsIP"
+
+      - name: Keep Alive
         shell: pwsh
         run: |
-          Write-Host "Preparacao concluida."
+          Write-Host "================================"
+          Write-Host "       BENJA WINDOWS PC"
+          Write-Host "================================"
+          Write-Host "IP: $env:TAILSCALE_IP"
           Write-Host "Usuario: Benja"
-          Write-Host "Este runner e temporario."
+          Write-Host "Senha: configurada"
+          Write-Host "================================"
+
+          while ($true) {
+            Start-Sleep -Seconds 60
+          }
           
